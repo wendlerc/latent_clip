@@ -330,17 +330,21 @@ def create_model_and_transforms(
         cache_dir=cache_dir,
         output_dict=output_dict,
     )
-
-    image_mean = image_mean or getattr(model.visual, 'image_mean', None)
-    image_std = image_std or getattr(model.visual, 'image_std', None)
-    preprocess_train = image_transform(
+    if "latent" in model_name.lower():
+        image_mean = 0.5
+        image_std = 0.5
+        # this results in [-1, 1] range
+    else:
+        image_mean = image_mean or getattr(model.visual, 'image_mean', None)
+        image_std = image_std or getattr(model.visual, 'image_std', None)
+    preprocess_train = image_transform( 
         model.visual.image_size,
         is_train=True,
         mean=image_mean,
         std=image_std,
         aug_cfg=aug_cfg,
     )
-    preprocess_val = image_transform(
+    preprocess_val = image_transform(  
         model.visual.image_size,
         is_train=False,
         mean=image_mean,
@@ -380,9 +384,14 @@ def create_model_from_pretrained(
     if not return_transform:
         return model
 
-    image_mean = image_mean or getattr(model.visual, 'image_mean', None)
-    image_std = image_std or getattr(model.visual, 'image_std', None)
-    preprocess = image_transform(
+    if "latent" in model_name.lower():
+        image_mean = 0.5
+        image_std = 0.5
+        # this results in [-1, 1] range
+    else:
+        image_mean = image_mean or getattr(model.visual, 'image_mean', None)
+        image_std = image_std or getattr(model.visual, 'image_std', None)
+    preprocess = image_transform( 
         model.visual.image_size,
         is_train=False,
         mean=image_mean,
