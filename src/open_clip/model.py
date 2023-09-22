@@ -12,6 +12,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
+from diffusers.models import AutoencoderKL
+
 
 from .hf_model import HFTextEncoder
 from .modified_resnet import ModifiedResNet
@@ -87,7 +89,8 @@ def _build_vision_tower(
         embed_dim: int,
         vision_cfg: CLIPVisionCfg,
         quick_gelu: bool = False,
-        cast_dtype: Optional[torch.dtype] = None
+        cast_dtype: Optional[torch.dtype] = None,
+        n_input_channels: int = 3,
 ):
     if isinstance(vision_cfg, dict):
         vision_cfg = CLIPVisionCfg(**vision_cfg)
@@ -98,6 +101,8 @@ def _build_vision_tower(
     act_layer = QuickGELU if quick_gelu else nn.GELU
 
     if vision_cfg.timm_model_name:
+        if n_input_channels != 3:
+            raise ValueError(f"timm models only support 3 input channels, got {n_input_channels}")
         visual = TimmModel(
             vision_cfg.timm_model_name,
             pretrained=vision_cfg.timm_model_pretrained,
@@ -111,6 +116,8 @@ def _build_vision_tower(
             image_size=vision_cfg.image_size,
         )
     elif isinstance(vision_cfg.layers, (tuple, list)):
+        if n_input_channels != 3:
+            raise ValueError(f"ResNet models only support 3 input channels, got {n_input_channels}")
         vision_heads = vision_cfg.width * 32 // vision_cfg.head_width
         visual = ModifiedResNet(
             layers=vision_cfg.layers,
@@ -140,6 +147,7 @@ def _build_vision_tower(
             output_dim=embed_dim,
             act_layer=act_layer,
             norm_layer=norm_layer,
+            n_input_channels=n_input_channels,
         )
 
     return visual
@@ -184,6 +192,60 @@ def _build_text_tower(
     return text
 
 
+class LatentCLIP(nn.Module):
+    def __init__(
+            self,
+            embed_dim: int,
+            vision_cfg: CLIPVisionCfg,
+            text_cfg: CLIPTextCfg,
+            quick_gelu: bool = False,
+            cast_dtype: Optional[torch.dtype] = None,
+            output_dict: bool = False,
+    ):
+        super().__init__()
+        self.clip = CLIP(embed_dim=embed_dim,
+                        vision_cfg=vision_cfg,
+                        text_cfg=text_cfg,
+                        quick_gelu=quick_gelu,
+                        cast_dtype=cast_dtype,
+                        output_dict=output_dict,
+                        n_input_channels=4)
+        self.vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae")
+        # freeze the vae
+        for param in self.vae.parameters():
+            param.requires_grad = False
+    def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):
+        # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
+        self.visual.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
+
+    @torch.jit.ignore
+    def set_grad_checkpointing(self, enable=True):
+        self.clip.set_grad_checkpointing(enable)
+
+    def encode_image(self, image, normalize: bool = False):
+        posterior = self.vae.encode(image).latent_dist # batch_size x 3 x height x width
+        latent_image = posterior.sample() # batch_size x 4 x height x width
+        features = self.clip.encode_image(latent_image, normalize=normalize)
+        return features
+
+    def encode_text(self, text, normalize: bool = False):
+        return self.clip.encode_text(text, normalize=normalize)
+        
+    def forward(
+            self,
+            image: Optional[torch.Tensor] = None,
+            text: Optional[torch.Tensor] = None,
+    ):
+        image_features = self.encode_image(image, normalize=True) if image is not None else None
+        text_features = self.encode_text(text, normalize=True) if text is not None else None
+        if self.output_dict:
+            return {
+                "image_features": image_features,
+                "text_features": text_features,
+                "logit_scale": self.clip.logit_scale.exp()
+            }
+        return image_features, text_features, self.clip.logit_scale.exp()    
+
 class CLIP(nn.Module):
     output_dict: torch.jit.Final[bool]
 
@@ -195,10 +257,11 @@ class CLIP(nn.Module):
             quick_gelu: bool = False,
             cast_dtype: Optional[torch.dtype] = None,
             output_dict: bool = False,
+            n_input_channels: int = 3,
     ):
         super().__init__()
         self.output_dict = output_dict
-        self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype)
+        self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype, n_input_channels)
 
         text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype)
         self.transformer = text.transformer

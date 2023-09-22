@@ -343,11 +343,13 @@ class VisionTransformer(nn.Module):
             input_patchnorm: bool = False,
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
-            output_tokens: bool = False
+            output_tokens: bool = False,
+            n_input_channels: int = 3,
     ):
         super().__init__()
         self.output_tokens = output_tokens
         image_height, image_width = self.image_size = to_2tuple(image_size)
+        self.n_input_channels = n_input_channels
         patch_height, patch_width = self.patch_size = to_2tuple(patch_size)
         self.grid_size = (image_height // patch_height, image_width // patch_width)
         self.output_dim = output_dim
@@ -356,12 +358,12 @@ class VisionTransformer(nn.Module):
         self.input_patchnorm = input_patchnorm
 
         if input_patchnorm:
-            patch_input_dim = patch_height * patch_width * 3
+            patch_input_dim = patch_height * patch_width * n_input_channels
             self.patchnorm_pre_ln = LayerNorm(patch_input_dim)
             self.conv1 = nn.Linear(patch_input_dim, width)
         else:
             self.patchnorm_pre_ln = nn.Identity()
-            self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=patch_size, bias=False)
+            self.conv1 = nn.Conv2d(in_channels=n_input_channels, out_channels=width, kernel_size=patch_size, stride=patch_size, bias=False)
 
         # class embeddings and positional embeddings
         scale = width ** -0.5
