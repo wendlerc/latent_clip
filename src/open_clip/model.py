@@ -20,6 +20,8 @@ from .modified_resnet import ModifiedResNet
 from .timm_model import TimmModel
 from .transformer import LayerNormFp32, LayerNorm, QuickGELU, Attention, VisionTransformer, TextTransformer
 from .utils import to_2tuple
+from .constants import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
+
 
 
 @dataclass
@@ -223,6 +225,11 @@ class LatentCLIP(nn.Module):
         self.clip.set_grad_checkpointing(enable)
 
     def encode_image(self, image, normalize: bool = False):
+        # normalize image to -1,1. the data is z-normalized using the openai mean and std, so that has to be undone here
+        # cleaner to do it in the image transform but for now this is fine
+        image = image * torch.tensor(OPENAI_DATASET_STD).reshape(1,3,1,1).to(image.device)
+        image += torch.tensor(OPENAI_DATASET_MEAN).reshape(1,3,1,1).to(image.device)
+        image = image * 2 - 1
         posterior = self.vae.encode(image).latent_dist # batch_size x 3 x height x width
         latent_image = posterior.sample() # batch_size x 4 x height x width
         features = self.clip.encode_image(latent_image, normalize=normalize)
