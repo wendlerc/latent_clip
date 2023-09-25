@@ -254,8 +254,9 @@ def create_model(
                 f'Pretrained weights were required for (model: {model_name}, pretrained: {pretrained}) but not loaded.')
 
         # set image / mean metadata from pretrained_cfg if available, or use default
-        model.visual.image_mean = pretrained_cfg.get('mean', None) or OPENAI_DATASET_MEAN
-        model.visual.image_std = pretrained_cfg.get('std', None) or OPENAI_DATASET_STD
+        if "latent" not in model_name.lower():
+            model.visual.image_mean = pretrained_cfg.get('mean', None) or OPENAI_DATASET_MEAN
+            model.visual.image_std = pretrained_cfg.get('std', None) or OPENAI_DATASET_STD
 
     if output_dict and hasattr(model, "output_dict"):
         model.output_dict = True

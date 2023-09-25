@@ -194,6 +194,13 @@ def _build_text_tower(
     return text
 
 
+class VisualStub():
+    def __init__(self, image_size: int, image_mean: float = 0.5, image_std: float = 0.5):
+        self.image_size = image_size
+        self.image_mean = image_mean
+        self.image_std = image_std
+
+
 class LatentCLIP(nn.Module):
     def __init__(
             self,
@@ -205,8 +212,19 @@ class LatentCLIP(nn.Module):
             output_dict: bool = False,
     ):
         super().__init__()
+        self.output_dict = output_dict
+        self.cast_dtype = cast_dtype # not used
+        self.quick_gelu = quick_gelu # not used
+        self.embed_dim = embed_dim
+        self.vision_cfg = vision_cfg
+        self.text_cfg = text_cfg
+        
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        self.visual = VisualStub(image_size=vision_cfg["image_size"])
+        latent_size = vision_cfg["image_size"] // 8
+        vision_cfg["image_size"] = latent_size
         self.clip = CLIP(embed_dim=embed_dim,
-                        vision_cfg=vision_cfg,
+                        vision_cfg=vision_cfg, #     "224 -> 32 patch": "224/8 -> 32/8 patch" 
                         text_cfg=text_cfg,
                         quick_gelu=quick_gelu,
                         cast_dtype=cast_dtype,
@@ -216,9 +234,10 @@ class LatentCLIP(nn.Module):
         # freeze the vae
         for param in self.vae.parameters():
             param.requires_grad = False
+
     def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
-        self.visual.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
+        self.clip.lock_image_tower(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
