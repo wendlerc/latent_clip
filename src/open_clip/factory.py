@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 
 from .constants import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
-from .model import CLIP, LatentCLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict,\
+from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict,\
     resize_pos_embed, get_cast_dtype
 from .coca_model import CoCa
 from .loss import ClipLoss, DistillClipLoss, CoCaLoss
@@ -196,8 +196,6 @@ def create_model(
                 model = CoCa(**model_cfg, cast_dtype=cast_dtype)
             else:
                 model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
-        elif "latent" in model_name.lower():
-            model = LatentCLIP(**model_cfg, cast_dtype=cast_dtype)
         else:
             model = CLIP(**model_cfg, cast_dtype=cast_dtype)
 
@@ -257,6 +255,9 @@ def create_model(
         if "latent" not in model_name.lower():
             model.visual.image_mean = pretrained_cfg.get('mean', None) or OPENAI_DATASET_MEAN
             model.visual.image_std = pretrained_cfg.get('std', None) or OPENAI_DATASET_STD
+        else:
+            model.visual.image_mean = 0.5
+            model.visual.image_std = 0.5
 
     if output_dict and hasattr(model, "output_dict"):
         model.output_dict = True

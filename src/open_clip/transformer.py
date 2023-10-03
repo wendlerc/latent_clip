@@ -9,6 +9,9 @@ from torch.utils.checkpoint import checkpoint
 
 from .utils import to_2tuple
 
+from diffusers.models import AutoencoderKL
+
+
 
 class LayerNormFp32(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16 (by casting to float32 and back)."""
@@ -726,3 +729,89 @@ class MultimodalTransformer(Transformer):
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
         self.grad_checkpointing = enable
+
+
+class LatentVisionTransformer(nn.Module):
+    def __init__(self, 
+                image_size: int,
+                patch_size: int,
+                width: int,
+                layers: int,
+                heads: int,
+                mlp_ratio: float,
+                ls_init_value: float = None,
+                global_average_pool: bool = False,
+                attentional_pool: bool = False,
+                n_queries: int = 256,
+                attn_pooler_heads: int = 8,
+                output_dim: int = 512,
+                patch_dropout: float = 0.,
+                input_patchnorm: bool = False,
+                act_layer: Callable = nn.GELU,
+                norm_layer: Callable = LayerNorm,
+                output_tokens: bool = False,
+                n_input_channels: int = 3,
+                
+                latent_encoder_name: str = "stabilityai/sdxl-vae",
+                latent_n_channels: int = 4,
+                latent_factor: int = 8,
+    ):
+        super().__init__()
+        self.output_tokens = output_tokens
+        image_height, image_width = self.image_size = to_2tuple(image_size)
+        latent_size = image_size//latent_factor 
+        latent_height, latent_width = self.latent_size = to_2tuple(latent_size)
+        self.n_input_channels = n_input_channels
+        patch_height, patch_width = self.patch_size = to_2tuple(patch_size)
+        self.grid_size = (latent_height // patch_height, latent_width // patch_width)
+        self.output_dim = output_dim
+
+        self.vae = AutoencoderKL.from_pretrained(latent_encoder_name)
+        # freeze the vae
+        for param in self.vae.parameters():
+            param.requires_grad = False
+        self.latent_vit = VisionTransformer(image_size = latent_size,
+                                            patch_size = patch_size,
+                                            width = width,
+                                            layers = layers,
+                                            heads = heads,
+                                            mlp_ratio = mlp_ratio,
+                                            ls_init_value = ls_init_value,
+                                            global_average_pool = global_average_pool,
+                                            attentional_pool = attentional_pool,
+                                            n_queries = n_queries,
+                                            attn_pooler_heads = attn_pooler_heads,
+                                            output_dim = output_dim,
+                                            patch_dropout = patch_dropout,
+                                            input_patchnorm = input_patchnorm,
+                                            act_layer = act_layer,
+                                            norm_layer = norm_layer,
+                                            output_tokens = output_tokens,
+                                            n_input_channels = latent_n_channels)
+        self.init_parameters()
+
+    def lock(self, unlocked_groups=0, freeze_bn_stats=False):
+        self.latent_vit.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
+
+    def init_parameters(self):
+        self.latent_vit.init_parameters()
+
+    @torch.jit.ignore
+    def set_grad_checkpointing(self, enable=True):
+        self.latent_vit.grad_checkpointing = enable
+
+
+    def forward(self, x: torch.Tensor):
+        # normalize image to -1,1. the data is z-normalized using the openai mean and std, so that has to be undone here
+        # cleaner to do it in the image transform but for now this is fine
+        
+        # image = image * torch.tensor(OPENAI_DATASET_STD).reshape(1,3,1,1).to(image.device)
+        # image += torch.tensor(OPENAI_DATASET_MEAN).reshape(1,3,1,1).to(image.device)
+        # image = image * 2 - 1
+        # better: provide mean = 0.5 and std = 0.5 as command line arguments -> has the same effect
+        
+        posterior = self.vae.encode(x).latent_dist # batch_size x 3 x height x width
+        latent_image = posterior.sample() # batch_size x 4 x height x width
+        features = self.latent_vit(latent_image)
+        return features
+

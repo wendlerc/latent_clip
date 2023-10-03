@@ -4,7 +4,7 @@
         "image_size": 224, 
         "layers": 12,
         "width": 768,
-        "patch_size": 32,
+        "patch_size": 7,
         "latent_encoder_name": "stabilityai/sdxl-vae",
         "latent_factor": 8,
         "latent_n_channels": 4 

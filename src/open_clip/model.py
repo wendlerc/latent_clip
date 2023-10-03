@@ -12,13 +12,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.checkpoint import checkpoint
-from diffusers.models import AutoencoderKL
-
 
 from .hf_model import HFTextEncoder
 from .modified_resnet import ModifiedResNet
 from .timm_model import TimmModel
-from .transformer import LayerNormFp32, LayerNorm, QuickGELU, Attention, VisionTransformer, TextTransformer
+from .transformer import LayerNormFp32, LayerNorm, QuickGELU, Attention, VisionTransformer, TextTransformer, LatentVisionTransformer
 from .utils import to_2tuple
 from .constants import OPENAI_DATASET_MEAN, OPENAI_DATASET_STD
 
@@ -49,6 +47,10 @@ class CLIPVisionCfg:
     timm_proj_bias: bool = False  # enable bias final projection
     timm_drop: float = 0.  # head dropout
     timm_drop_path: Optional[float] = None  # backbone stochastic depth
+
+    latent_encoder_name: str = None
+    latent_factor: int = 8
+    latent_n_channels: int = 4
 
 
 @dataclass
@@ -102,7 +104,33 @@ def _build_vision_tower(
     # NOTE: timm models always use native GELU regardless of quick_gelu flag.
     act_layer = QuickGELU if quick_gelu else nn.GELU
 
-    if vision_cfg.timm_model_name:
+    if vision_cfg.latent_encoder_name:
+        vision_heads = vision_cfg.width // vision_cfg.head_width
+        norm_layer = LayerNormFp32 if cast_dtype in (torch.float16, torch.bfloat16) else LayerNorm
+        visual = LatentVisionTransformer(
+            image_size=vision_cfg.image_size,
+            patch_size=vision_cfg.patch_size,
+            width=vision_cfg.width,
+            layers=vision_cfg.layers,
+            heads=vision_heads,
+            mlp_ratio=vision_cfg.mlp_ratio,
+            ls_init_value=vision_cfg.ls_init_value,
+            patch_dropout=vision_cfg.patch_dropout,
+            input_patchnorm=vision_cfg.input_patchnorm,
+            global_average_pool=vision_cfg.global_average_pool,
+            attentional_pool=vision_cfg.attentional_pool,
+            n_queries=vision_cfg.n_queries,
+            attn_pooler_heads=vision_cfg.attn_pooler_heads,
+            output_tokens=vision_cfg.output_tokens,
+            output_dim=embed_dim,
+            act_layer=act_layer,
+            norm_layer=norm_layer,
+            n_input_channels=n_input_channels,
+            latent_encoder_name=vision_cfg.latent_encoder_name,
+            latent_n_channels=vision_cfg.latent_n_channels,
+            latent_factor=vision_cfg.latent_factor,
+        )
+    elif vision_cfg.timm_model_name:
         if n_input_channels != 3:
             raise ValueError(f"timm models only support 3 input channels, got {n_input_channels}")
         visual = TimmModel(
@@ -191,89 +219,7 @@ def _build_text_tower(
             act_layer=act_layer,
             norm_layer=norm_layer,
         )
-    return text
-
-
-class VisualStub():
-    def __init__(self, image_size: int, image_mean: float = 0.5, image_std: float = 0.5):
-        self.image_size = image_size
-        self.image_mean = image_mean
-        self.image_std = image_std
-
-
-class LatentCLIP(nn.Module):
-    def __init__(
-            self,
-            embed_dim: int,
-            vision_cfg: CLIPVisionCfg,
-            text_cfg: CLIPTextCfg,
-            quick_gelu: bool = False,
-            cast_dtype: Optional[torch.dtype] = None,
-            output_dict: bool = False,
-    ):
-        super().__init__()
-        self.output_dict = output_dict
-        self.cast_dtype = cast_dtype # not used
-        self.quick_gelu = quick_gelu # not used
-        self.embed_dim = embed_dim
-        self.vision_cfg = vision_cfg
-        self.text_cfg = text_cfg
-        
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
-        self.visual = VisualStub(image_size=vision_cfg["image_size"])
-        latent_size = vision_cfg["image_size"] // 8
-        vision_cfg["image_size"] = latent_size
-        self.clip = CLIP(embed_dim=embed_dim,
-                        vision_cfg=vision_cfg, #     "224 -> 32 patch": "224/8 -> 32/8 patch" 
-                        text_cfg=text_cfg,
-                        quick_gelu=quick_gelu,
-                        cast_dtype=cast_dtype,
-                        output_dict=output_dict,
-                        n_input_channels=4)
-        self.vae = AutoencoderKL.from_pretrained("stabilityai/sdxl-vae")
-        # freeze the vae
-        for param in self.vae.parameters():
-            param.requires_grad = False
-
-    def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):
-        # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
-        self.clip.lock_image_tower(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
-
-    @torch.jit.ignore
-    def set_grad_checkpointing(self, enable=True):
-        self.clip.set_grad_checkpointing(enable)
-
-    def encode_image(self, image, normalize: bool = False):
-        # normalize image to -1,1. the data is z-normalized using the openai mean and std, so that has to be undone here
-        # cleaner to do it in the image transform but for now this is fine
-        
-        # image = image * torch.tensor(OPENAI_DATASET_STD).reshape(1,3,1,1).to(image.device)
-        # image += torch.tensor(OPENAI_DATASET_MEAN).reshape(1,3,1,1).to(image.device)
-        # image = image * 2 - 1
-        # better: provide mean = 0.5 and std = 0.5 as command line arguments -> has the same effect
-        
-        posterior = self.vae.encode(image).latent_dist # batch_size x 3 x height x width
-        latent_image = posterior.sample() # batch_size x 4 x height x width
-        features = self.clip.encode_image(latent_image, normalize=normalize)
-        return features
-
-    def encode_text(self, text, normalize: bool = False):
-        return self.clip.encode_text(text, normalize=normalize)
-        
-    def forward(
-            self,
-            image: Optional[torch.Tensor] = None,
-            text: Optional[torch.Tensor] = None,
-    ):
-        image_features = self.encode_image(image, normalize=True) if image is not None else None
-        text_features = self.encode_text(text, normalize=True) if text is not None else None
-        if self.output_dict:
-            return {
-                "image_features": image_features,
-                "text_features": text_features,
-                "logit_scale": self.clip.logit_scale.exp()
-            }
-        return image_features, text_features, self.clip.logit_scale.exp()    
+    return text  
 
 class CLIP(nn.Module):
     output_dict: torch.jit.Final[bool]
