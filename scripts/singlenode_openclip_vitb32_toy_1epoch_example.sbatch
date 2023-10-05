@@ -70,7 +70,7 @@ srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
     --batch-size=896 \
     --epochs=20 \
     --workers=12 \
-    --model ViT-B-32 \
+    --model $MODEL \
     --name $NAME \
     --logs $LOGS \
     --seed 1337 \
