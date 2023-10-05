@@ -132,7 +132,7 @@ Below are checkpoints of models trained on YFCC-15M, along with their zero-shot 
 
 As part of [DataComp](https://github.com/mlfoundations/datacomp), we trained models on CommonPool using various data filtering strategies.
 
-The best performing models are specified below for the xlarge scale, see our paper [DataComp: In seearch of the next generation of multimodal datasets](https://arxiv.org/abs/2304.14108) for more details.
+The best performing models are specified below for the xlarge scale, see our paper [DataComp: In search of the next generation of multimodal datasets](https://arxiv.org/abs/2304.14108) for more details.
 
 Additional models and more information can be found at [/docs/datacomp_models.md](/docs/datacomp_models.md).
 
