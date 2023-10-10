@@ -10,6 +10,7 @@ from torch.utils.checkpoint import checkpoint
 from .utils import to_2tuple
 
 from diffusers.models import AutoencoderKL
+from diffusers.models.vae import DiagonalGaussianDistribution
 
 
 
@@ -766,10 +767,15 @@ class LatentVisionTransformer(nn.Module):
         self.grid_size = (latent_height // patch_height, latent_width // patch_width)
         self.output_dim = output_dim
 
-        self.vae = AutoencoderKL.from_pretrained(latent_encoder_name)
+        vae = AutoencoderKL.from_pretrained(latent_encoder_name)
+        self.vae_encoder = vae.encoder
+        self.vae_quant_conv = vae.quant_conv
         # freeze the vae
-        for param in self.vae.parameters():
+        for param in self.vae_encoder.parameters():
             param.requires_grad = False
+        for param in self.vae_quant_conv.parameters():
+            param.requires_grad = False
+
         self.latent_vit = VisionTransformer(image_size = latent_size,
                                             patch_size = patch_size,
                                             width = width,
@@ -810,8 +816,13 @@ class LatentVisionTransformer(nn.Module):
         # image = image * 2 - 1
         # better: provide mean = 0.5 and std = 0.5 as command line arguments -> has the same effect
         
-        posterior = self.vae.encode(x).latent_dist # batch_size x 3 x height x width
-        latent_image = posterior.sample() # batch_size x 4 x height x width
+        # this somehow led to weird behavior, so we do it manually
+        # posterior = self.vae.encode(x).latent_dist # batch_size x 3 x height x width
+        # x is batch_size x 3 x height x width
+        h = self.vae_encoder(x) # batch_size x 4 x height/8 x width/8
+        moments = self.vae_quant_conv(h) # batch_size x 4 x height/8 x width/8
+        posterior = DiagonalGaussianDistribution(moments)
+        latent_image = posterior.sample() 
         features = self.latent_vit(latent_image)
         return features
 
