@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import math
 from typing import Callable, Optional, Sequence, Tuple
+import copy
 
 import torch
 from torch import nn
@@ -768,8 +769,11 @@ class LatentVisionTransformer(nn.Module):
         self.output_dim = output_dim
 
         vae = AutoencoderKL.from_pretrained(latent_encoder_name)
-        self.vae_encoder = vae.encoder
-        self.vae_quant_conv = vae.quant_conv
+        self.vae_encoder = copy.deepcopy(vae.encoder)
+        self.vae_quant_conv = copy.deepcopy(vae.quant_conv)
+        self.vae_encoder.eval()
+        self.vae_quant_conv.eval()
+        del vae 
         # freeze the vae
         for param in self.vae_encoder.parameters():
             param.requires_grad = False
@@ -796,6 +800,11 @@ class LatentVisionTransformer(nn.Module):
                                             n_input_channels = latent_n_channels)
         self.init_parameters()
 
+    def train(self, mode=True):
+        super().train(mode=mode)
+        self.vae_encoder.eval()
+        self.vae_quant_conv.eval()
+
     def lock(self, unlocked_groups=0, freeze_bn_stats=False):
         self.latent_vit.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
 
@@ -804,25 +813,23 @@ class LatentVisionTransformer(nn.Module):
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
-        self.latent_vit.grad_checkpointing = enable
+        self.latent_vit.set_grad_checkpointing(enable=enable)
 
 
     def forward(self, x: torch.Tensor):
-        # normalize image to -1,1. the data is z-normalized using the openai mean and std, so that has to be undone here
-        # cleaner to do it in the image transform but for now this is fine
+        # SDXL VAE expects images in range [-1,1]. 
+        # this is achieved by setting the mean and std of the dataset to 0.5 and 0.5 respectively
+        # see factory.py 
         
-        # image = image * torch.tensor(OPENAI_DATASET_STD).reshape(1,3,1,1).to(image.device)
-        # image += torch.tensor(OPENAI_DATASET_MEAN).reshape(1,3,1,1).to(image.device)
-        # image = image * 2 - 1
-        # better: provide mean = 0.5 and std = 0.5 as command line arguments -> has the same effect
-        
-        # this somehow led to weird behavior, so we do it manually
-        # posterior = self.vae.encode(x).latent_dist # batch_size x 3 x height x width
+        # # the code below is equivalent to:
+        # posterior = self.vae.encode(x).latent_dist 
         # x is batch_size x 3 x height x width
-        h = self.vae_encoder(x) # batch_size x 4 x height/8 x width/8
-        moments = self.vae_quant_conv(h) # batch_size x 4 x height/8 x width/8
-        posterior = DiagonalGaussianDistribution(moments)
-        latent_image = posterior.sample() 
+         
+        with torch.no_grad():
+            h = self.vae_encoder(x) # batch_size x 8 x height/8 x width/8
+            moments = self.vae_quant_conv(h) # batch_size x 8 x height/8 x width/8
+            posterior = DiagonalGaussianDistribution(moments)
+            latent_image = posterior.sample() # batch_size x 4 x height/8 x width/8
         features = self.latent_vit(latent_image)
         return features
 
