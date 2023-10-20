@@ -8,6 +8,7 @@ import sys
 import braceexpand
 from dataclasses import dataclass
 from multiprocessing import Value
+import io
 
 import numpy as np
 import pandas as pd
@@ -176,6 +177,10 @@ def filter_no_caption_or_no_image(sample):
     has_image = ('png' in sample or 'jpg' in sample or 'jpeg' in sample or 'webp' in sample)
     return has_caption and has_image
 
+def filter_no_caption_or_no_latent(sample):
+    has_caption = ('txt' in sample)
+    has_image = ('latent.pt' in sample)
+    return has_caption and has_image
 
 def log_and_continue(exn):
     """Call in an exception handler to ignore any exception, issue a warning, and continue."""
@@ -326,6 +331,7 @@ class ResampledShards2(IterableDataset):
 
 
 def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokenizer=None):
+    is_latent = args.dataset_type == "webdataset-latent"
     input_shards = args.train_data if is_train else args.val_data
     assert input_shards is not None
     resampled = getattr(args, 'dataset_resampled', False) and is_train
@@ -385,14 +391,26 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
             # at this point, we have an iterator over the shards assigned to each worker
             wds.tarfile_to_samples(handler=log_and_continue),
         ])
-    pipeline.extend([
-        wds.select(filter_no_caption_or_no_image),
-        wds.decode("pilrgb", handler=log_and_continue),
-        wds.rename(image="jpg;png;jpeg;webp", text="txt"),
-        wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
-        wds.to_tuple("image", "text"),
-        wds.batched(args.batch_size, partial=not is_train)
-    ])
+    if is_latent:
+            def load_latent(z):
+                return torch.load(io.BytesIO(z), map_location='cpu').to(torch.float32)
+            pipeline.extend([
+            wds.select(filter_no_caption_or_no_latent),
+            wds.decode(handler=log_and_continue),
+            wds.rename(image="latent.pt", text="txt"),
+            wds.map_dict(image=load_latent, text=lambda text: tokenizer(text)[0], handler=log_and_continue),
+            wds.to_tuple("image", "text"),
+            wds.batched(args.batch_size, partial=not is_train)
+        ])
+    else:
+        pipeline.extend([
+            wds.select(filter_no_caption_or_no_image),
+            wds.decode("pilrgb", handler=log_and_continue),
+            wds.rename(image="jpg;png;jpeg;webp", text="txt"),
+            wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
+            wds.to_tuple("image", "text"),
+            wds.batched(args.batch_size, partial=not is_train)
+        ])
 
     dataset = wds.DataPipeline(*pipeline)
 
@@ -523,7 +541,9 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
 
 
 def get_dataset_fn(data_path, dataset_type):
-    if dataset_type == "webdataset":
+    if dataset_type == "webdataset-latent":
+        return get_wds_dataset
+    elif dataset_type == "webdataset":
         return get_wds_dataset
     elif dataset_type == "csv":
         return get_csv_dataset
