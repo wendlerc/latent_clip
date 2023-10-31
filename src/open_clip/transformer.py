@@ -767,7 +767,7 @@ class LatentVisionTransformer(nn.Module):
         patch_height, patch_width = self.patch_size = to_2tuple(patch_size)
         self.grid_size = (latent_height // patch_height, latent_width // patch_width)
         self.output_dim = output_dim
-
+        self.latent_encoder_name = latent_encoder_name
         vae = AutoencoderKL.from_pretrained(latent_encoder_name)
         self.vae_encoder = copy.deepcopy(vae.encoder)
         self.vae_quant_conv = copy.deepcopy(vae.quant_conv)
