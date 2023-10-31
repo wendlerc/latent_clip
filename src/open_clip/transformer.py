@@ -824,12 +824,14 @@ class LatentVisionTransformer(nn.Module):
         # # the code below is equivalent to:
         # posterior = self.vae.encode(x).latent_dist 
         # x is batch_size x 3 x height x width
-         
-        with torch.no_grad():
-            h = self.vae_encoder(x) # batch_size x 8 x height/8 x width/8
-            moments = self.vae_quant_conv(h) # batch_size x 8 x height/8 x width/8
-            posterior = DiagonalGaussianDistribution(moments)
-            latent_image = posterior.sample() # batch_size x 4 x height/8 x width/8
+        if x.shape[1] == 3: 
+            with torch.no_grad():
+                h = self.vae_encoder(x) # batch_size x 8 x height/8 x width/8
+                moments = self.vae_quant_conv(h) # batch_size x 8 x height/8 x width/8
+                posterior = DiagonalGaussianDistribution(moments)
+                latent_image = posterior.sample() # batch_size x 4 x height/8 x width/8
+        else:
+            latent_image = x
         features = self.latent_vit(latent_image)
         return features
 
