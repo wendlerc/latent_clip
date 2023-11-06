@@ -81,10 +81,10 @@ srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
     --train-data="pipe:aws s3 cp s3://stability-west/laioco-latents-split-full/{000..500}/{000000..000100}.tar -" \
     --dataset-type webdataset-latent \
     --dataset-resampled \
-    --train-num-samples=1000000000 \
-    --warmup 2000 \
+    --train-num-samples=100000000 \
+    --warmup 500 \
     --batch-size=4096 \
-    --epochs=2 \
+    --epochs=5 \
     --workers=12 \
     --model $MODEL \
     --name $NAME \
