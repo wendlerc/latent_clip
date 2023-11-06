@@ -109,13 +109,28 @@ def load_checkpoint(model, checkpoint_path, strict=True):
     if position_id_key in state_dict and not hasattr(model, position_id_key):
         del state_dict[position_id_key]
     resize_pos_embed(state_dict, model)
-    if 'latent' in checkpoint_path.lower():
-        # remove the vae decoder weights
-        state_dict = {k: v for k, v in state_dict.items() if not 'vae' in k}
-        incompatible_keys = model.load_state_dict(state_dict, strict=False)
-        # TODO: continue here
-        logging.info(state_dict.keys())
-        # logging.info([k for k in model.state_dict().keys() if 'vae' in k])
+    is_latent = 'latent' in model.visual.__class__.__name__.lower()
+    print(f'is_latent: {is_latent}')
+    print(f' model.__class__.__name__: {model.visual.__class__.__name__}')
+    if is_latent:
+        checkpoint_is_latent = False 
+        for k in state_dict.keys():
+            if 'visual.latent_vit' in k:
+                checkpoint_is_latent = True
+                break
+        if checkpoint_is_latent:
+            # remove the vae decoder weights
+            state_dict = {k: v for k, v in state_dict.items() if not 'vae' in k}
+            incompatible_keys = model.load_state_dict(state_dict, strict=False)
+        else: 
+            # we are starting from a pretrained CLIP that was trained on images
+            logging.warning(f'Trying to convert to latent vit state_dict')
+            state_dict = {k.replace('visual.', 'visual.latent_vit.'): v for k, v in state_dict.items()}
+            # delete the patch embedding
+            del state_dict['visual.latent_vit.conv1.weight']
+            #del state_dict['visual.latent_vit.positional_embedding'] # this one gets adjusted by load_state_dict
+            incompatible_keys = model.load_state_dict(state_dict, strict=False)
+            logging.warning(f'Incompatible keys: {incompatible_keys}')
     else:
         incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
