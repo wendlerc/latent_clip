@@ -109,7 +109,15 @@ def load_checkpoint(model, checkpoint_path, strict=True):
     if position_id_key in state_dict and not hasattr(model, position_id_key):
         del state_dict[position_id_key]
     resize_pos_embed(state_dict, model)
-    incompatible_keys = model.load_state_dict(state_dict, strict=strict)
+    if 'latent' in checkpoint_path.lower():
+        # remove the vae decoder weights
+        state_dict = {k: v for k, v in state_dict.items() if not 'vae' in k}
+        incompatible_keys = model.load_state_dict(state_dict, strict=False)
+        # TODO: continue here
+        logging.info(state_dict.keys())
+        # logging.info([k for k in model.state_dict().keys() if 'vae' in k])
+    else:
+        incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
 
 
