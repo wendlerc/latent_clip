@@ -22,14 +22,8 @@ if [ -z "$2" ]; then
     exit 1
 fi
 
-if [ -z "$3" ]; then
-    echo "pretrained model's wandb-run name required."
-    exit 1
-fi
-
 MODEL=$1
 NAME=$2
-PRETRAINED=$3
 #LOGS=/scratch/wendlerc/logs
 LOGS=/admin/home-wendlerc/models
 
