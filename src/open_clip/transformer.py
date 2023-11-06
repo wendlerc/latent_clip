@@ -465,7 +465,6 @@ class VisionTransformer(nn.Module):
             return x[:, 0], x[:, 1:]
 
     def forward(self, x: torch.Tensor):
-
         # to patches - whether to use dual patchnorm - https://arxiv.org/abs/2302.01327v1
         if self.input_patchnorm:
             # einops - rearrange(x, 'b c (h p1) (w p2) -> b (h w) (c p1 p2)')
@@ -804,6 +803,19 @@ class LatentVisionTransformer(nn.Module):
         super().train(mode=mode)
         self.vae_encoder.eval()
         self.vae_quant_conv.eval()
+
+    def freeze_everything_except_patch_embedding(self):
+        # this is used for stage 1 of finetuning a CLIP-ViT pretrained model
+        for param in self.latent_vit.parameters():
+            param.requires_grad = False
+        for param in self.latent_vit.conv1.parameters():
+            param.requires_grad = True
+        self.latent_vit.positional_embedding.requires_grad = True
+    
+    def unfreeze_everything(self):
+        # this is used for stage 2 of finetuning a CLIP-ViT pretrained model
+        for param in self.latent_vit.parameters():
+            param.requires_grad = True
 
     def lock(self, unlocked_groups=0, freeze_bn_stats=False):
         self.latent_vit.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)

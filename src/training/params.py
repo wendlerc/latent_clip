@@ -436,6 +436,12 @@ def parse_args(args):
         help='Replace the network linear layers from the bitsandbytes library. '
         'Allows int8 training/inference, etc.'
     )
+    parser.add_argument(
+        "--freeze-everything-except-patch-embedding",
+        default=False,
+        action="store_true",
+        help="This is used for Stage 1 of adapting a pretrained CLIP-ViT to a CLIP-Latent-ViT model."
+    )
     args = parser.parse_args(args)
 
     # If some params are not passed, we use the default values based on model name.

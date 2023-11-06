@@ -266,6 +266,9 @@ def main(args):
         model.lock_text_tower(
             unlocked_layers=args.lock_text_unlocked_layers,
             freeze_layer_norm=args.lock_text_freeze_layer_norm)
+    
+    if args.freeze_everything_except_patch_embedding:
+        model.visual.freeze_everything_except_patch_embedding()
 
     if args.grad_checkpointing:
         model.set_grad_checkpointing()
