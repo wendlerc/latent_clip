@@ -316,6 +316,10 @@ class Transformer(nn.Module):
         if hasattr(self.resblocks[0].mlp.c_fc, 'int8_original_dtype'):
             return self.resblocks[0].mlp.c_fc.int8_original_dtype
         return self.resblocks[0].mlp.c_fc.weight.dtype
+    
+    def freeze_everything_except_patch_embedding(self):
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, x: torch.Tensor, attn_mask: Optional[torch.Tensor] = None):
         for r in self.resblocks:
