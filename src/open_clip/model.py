@@ -253,6 +253,10 @@ class CLIP(nn.Module):
     def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):
         # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
         self.visual.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
+    
+    def freeze_everything_except_patch_embedding(self):
+        self.visual.freeze_everything_except_patch_embedding()
+        self.transformer.freeze_everything_except_patch_embedding()
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):

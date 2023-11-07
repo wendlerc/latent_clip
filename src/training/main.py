@@ -231,6 +231,13 @@ def main(args):
         aug_cfg=args.aug_cfg,
         output_dict=True,
     )
+
+    #if args.freeze_everything_except_patch_embedding:
+    #    torch.save({'name':args.name, 
+    #                'state_dict': model.state_dict()}, 
+    #                os.path.join(args.checkpoint_path, "fix_randomness.pt"))
+    #    exit()
+
     if args.distill:
         # FIXME: currently assumes the model you're distilling from has the same tokenizer & transforms.
         dist_model, _, _ = create_model_and_transforms(
@@ -268,7 +275,7 @@ def main(args):
             freeze_layer_norm=args.lock_text_freeze_layer_norm)
     
     if args.freeze_everything_except_patch_embedding:
-        model.visual.freeze_everything_except_patch_embedding()
+        model.freeze_everything_except_patch_embedding()
 
     if args.grad_checkpointing:
         model.set_grad_checkpointing()

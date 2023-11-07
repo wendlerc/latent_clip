@@ -582,6 +582,10 @@ class TextTransformer(nn.Module):
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
 
+    def freeze_everything_except_patch_embedding(self):
+        for param in self.parameters():
+            param.requires_grad = False
+
     def build_attention_mask(self):
         # lazily create causal attention mask, with full attention between the tokens
         # pytorch uses additive attention mask; fill with -inf
