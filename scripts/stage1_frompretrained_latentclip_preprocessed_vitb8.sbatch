@@ -4,12 +4,14 @@
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=8
 #SBATCH --cpus-per-task=12
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=g40x
 #SBATCH --job-name=stage1-latentclip-vitb8
 #SBATCH --output=logs/stage1-latentclip-vitb8-%j.out
 #SBATCH --error=logs/stage1-latentclip-vitb8-%j.err
 #SBATCH --exclusive
+#SBATCH --exclude=ip-26-0-157-217,ip-26-0-144-140,ip-26-0-147-120
+
 
 # Check for command-line arguments
 if [ -z "$1" ]; then
@@ -70,9 +72,10 @@ export NLTK_DATA=cache
 
 # --train-data="pipe:aws s3 cp s3://datasets-west/laion5b/laion2B-data/{000000..231349}.tar -" \
 
-# lr 0.001
-# warmup 10000
-#    --resume latest \
+#    --freeze-everything-except-patch-embedding
+#    --pretrained $LOGS/ViT-B-32-pretrained/checkpoints/ViT-B-32.pt \
+
+
 srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
     --report-to "wandb,tensorboard" \
     --wandb-project-name "open-clip_welcomewest.hpc.stability.ai" \
@@ -100,8 +103,7 @@ srun --cpu_bind=v --accel-bind=gn python -u src/training/main.py \
     --save-most-recent \
     --grad-checkpoint \
     --precision amp_bfloat16 \
-    --pretrained $LOGS/ViT-B-32-pretrained/checkpoints/ViT-B-32.pt \
-    --resume latest \
+    --pretrained $LOGS/ViT-B-32-pretrained/checkpoints/manual_fix.pt \
     --freeze-everything-except-patch-embedding
 
 
