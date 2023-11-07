@@ -110,8 +110,6 @@ def load_checkpoint(model, checkpoint_path, strict=True):
         del state_dict[position_id_key]
     resize_pos_embed(state_dict, model)
     is_latent = 'latent' in model.visual.__class__.__name__.lower()
-    print(f'is_latent: {is_latent}')
-    print(f' model.__class__.__name__: {model.visual.__class__.__name__}')
     if is_latent:
         checkpoint_is_latent = False 
         for k in state_dict.keys():
