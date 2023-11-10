@@ -110,25 +110,21 @@ def load_checkpoint(model, checkpoint_path, strict=True):
         del state_dict[position_id_key]
     resize_pos_embed(state_dict, model)
     is_latent = 'latent' in model.visual.__class__.__name__.lower()
-    if is_latent:
-        checkpoint_is_latent = False 
-        for k in state_dict.keys():
-            if 'visual.latent_vit' in k:
-                checkpoint_is_latent = True
-                break
-        if checkpoint_is_latent:
-            # remove the vae decoder weights
-            state_dict = {k: v for k, v in state_dict.items() if not 'vae' in k}
-            incompatible_keys = model.load_state_dict(state_dict, strict=False)
-        else: 
-            # we are starting from a pretrained CLIP that was trained on images
-            logging.warning(f'Trying to convert to latent vit state_dict')
-            state_dict = {k.replace('visual.', 'visual.latent_vit.'): v for k, v in state_dict.items()}
-            # delete the patch embedding
-            del state_dict['visual.latent_vit.conv1.weight']
-            #del state_dict['visual.latent_vit.positional_embedding'] # this one gets adjusted by load_state_dict
-            incompatible_keys = model.load_state_dict(state_dict, strict=False)
-            logging.warning(f'Incompatible keys: {incompatible_keys}')
+    checkpoint_is_latent = False 
+    for k in state_dict.keys():
+        if 'visual.latent_vit' in k: #module. is removed in load_state_dict
+            checkpoint_is_latent = True
+            break
+    if is_latent and not checkpoint_is_latent:
+        # we are starting from a pretrained CLIP that was trained on images
+        logging.warning(f'Trying to convert to latent vit state_dict')
+        state_dict = {k.replace('visual.', 'visual.latent_vit.'): v for k, v in state_dict.items()}
+        # delete the patch embedding
+        del state_dict['visual.latent_vit.conv1.weight']
+        #del state_dict['visual.latent_vit.positional_embedding'] # this one gets adjusted by resize_pos_embed
+        state_dict = {k: v for k, v in state_dict.items()}
+        incompatible_keys = model.load_state_dict(state_dict, strict=False)
+        logging.warning(f'Incompatible keys: {incompatible_keys}')
     else:
         incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
