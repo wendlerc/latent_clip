@@ -798,7 +798,7 @@ class LatentVisionTransformer(nn.Module):
             if latent_n_decoding_layers > 1 and latent_n_decoding_layers <= 4:
                 # up_blocks 
                 self.vae_partial_decoder.extend(copy.deepcopy(vae.decoder.up_blocks[:latent_n_decoding_layers-1]))
-
+                latent_size *= 2**(latent_n_decoding_layers-1)
             if latent_n_decoding_layers > 4:
                 # mid_block
                 # conv_norm_out 
