@@ -51,6 +51,7 @@ class CLIPVisionCfg:
     latent_encoder_name: str = None
     latent_factor: int = 8
     latent_n_channels: int = 4
+    latent_n_decoding_layers: int = 0
 
 
 @dataclass
@@ -129,6 +130,7 @@ def _build_vision_tower(
             latent_encoder_name=vision_cfg.latent_encoder_name,
             latent_n_channels=vision_cfg.latent_n_channels,
             latent_factor=vision_cfg.latent_factor,
+            latent_n_decoding_layers=vision_cfg.latent_n_decoding_layers,
         )
     elif vision_cfg.timm_model_name:
         if n_input_channels != 3:

@@ -764,29 +764,56 @@ class LatentVisionTransformer(nn.Module):
                 latent_encoder_name: str = "stabilityai/sdxl-vae",
                 latent_n_channels: int = 4,
                 latent_factor: int = 8,
+                latent_n_decoding_layers: int = 0,
     ):
         super().__init__()
         self.output_tokens = output_tokens
         image_height, image_width = self.image_size = to_2tuple(image_size)
         latent_size = image_size//latent_factor 
         latent_height, latent_width = self.latent_size = to_2tuple(latent_size)
+        self.latent_n_decoding_layers = latent_n_decoding_layers
         self.n_input_channels = n_input_channels
         patch_height, patch_width = self.patch_size = to_2tuple(patch_size)
         self.grid_size = (latent_height // patch_height, latent_width // patch_width)
         self.output_dim = output_dim
         self.latent_encoder_name = latent_encoder_name
+        # prepare the VAE components
         vae = AutoencoderKL.from_pretrained(latent_encoder_name)
         self.vae_encoder = copy.deepcopy(vae.encoder)
         self.vae_quant_conv = copy.deepcopy(vae.quant_conv)
+        self.vae_partial_decoder = []
+        
         self.vae_encoder.eval()
         self.vae_quant_conv.eval()
-        del vae 
         # freeze the vae
         for param in self.vae_encoder.parameters():
             param.requires_grad = False
         for param in self.vae_quant_conv.parameters():
             param.requires_grad = False
 
+        if latent_n_decoding_layers > 0:
+            # only conv in 
+            self.vae_partial_decoder.append(copy.deepcopy(vae.decoder.conv_in))
+            
+            if latent_n_decoding_layers > 1 and latent_n_decoding_layers <= 4:
+                # up_blocks 
+                self.vae_partial_decoder.extend(copy.deepcopy(vae.decoder.up_blocks[:latent_n_decoding_layers-1]))
+
+            if latent_n_decoding_layers > 4:
+                # mid_block
+                # conv_norm_out 
+                # conv_act 
+                # conv_out
+                raise ValueError("latent_n_decoding_layers must be <= 4, > 4 not supported yet.")
+            self.vae_partial_decoder = nn.Sequential(*self.vae_partial_decoder)
+            self.vae_partial_decoder.eval()
+            for param in self.vae_partial_decoder.parameters():
+                param.requires_grad = False
+            # reduce number of channels of the feature map to target latent_n_channels using 1x1 convolution
+            self.latent_adapter = nn.Conv2d(in_channels=512, out_channels=latent_n_channels, kernel_size=1, stride=1, bias=False)
+
+        del vae 
+        
         self.latent_vit = VisionTransformer(image_size = latent_size,
                                             patch_size = patch_size,
                                             width = width,
@@ -852,6 +879,9 @@ class LatentVisionTransformer(nn.Module):
                 latent_image = posterior.sample() # batch_size x 4 x height/8 x width/8
         else:
             latent_image = x
+        if self.latent_n_decoding_layers > 0:
+            latent_image = self.vae_partial_decoder(latent_image)
+            latent_image = self.latent_adapter(latent_image)
         features = self.latent_vit(latent_image)
         return features
 
