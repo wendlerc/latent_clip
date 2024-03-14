@@ -7,4 +7,4 @@ huggingface_hub
 sentencepiece
 protobuf<4
 timm
-diffusers
+diffusers==0.24.0
