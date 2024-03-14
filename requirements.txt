@@ -8,3 +8,5 @@ sentencepiece
 protobuf<4
 timm
 diffusers==0.24.0
+accelerate
+matplotlib
