@@ -10,9 +10,12 @@ from torch.utils.checkpoint import checkpoint
 
 from .utils import to_2tuple
 
-from diffusers.models import AutoencoderKL
-from diffusers.models.vae import DiagonalGaussianDistribution
-
+## this is for diffusers==0.24.0
+#from diffusers.models import AutoencoderKL
+#from diffusers.models.vae import DiagonalGaussianDistribution
+## from diffusers==0.28.0 onwards these are the imports...
+from diffusers.models.autoencoders import AutoencoderKL
+from diffusers.models.autoencoders.vae import DiagonalGaussianDistribution
 
 
 class LayerNormFp32(nn.LayerNorm):

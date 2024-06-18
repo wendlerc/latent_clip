@@ -7,6 +7,6 @@ huggingface_hub
 sentencepiece
 protobuf<4
 timm
-diffusers==0.24.0
+diffusers==0.28.0
 accelerate
 matplotlib
