@@ -18,9 +18,9 @@ def _read_reqs(relpath):
 REQUIREMENTS = _read_reqs("requirements.txt")
 TRAINING_REQUIREMENTS = _read_reqs("requirements-training.txt")
 
-exec(open('src/open_clip/version.py').read())
+exec(open('src/latent_clip/version.py').read())
 setup(
-    name='open_clip_torch',
+    name='latent_clip_torch',
     version=__version__,
     description='OpenCLIP',
     long_description=long_description,
